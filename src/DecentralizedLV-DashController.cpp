@@ -51,7 +51,7 @@ void softStartTimer();
 //////////////////////////////////////////////////
 #define HEADLIGHT       A1      //Switch used to set headlight mode - Analog pin for auto-on or manual-on basedd on voltage
 #define DRV_SW          A2      //Switch used to set drive mode - Analog pin for normal, eco, and sport modes
-#define FAN_SW          D0      //Switch to control if driver fan is on or off
+#define HORN_SW         D0      //Switch to control if driver fan is on or off
 #define HIGHBEAM        D3      //Switch to control highbeams on or off
 #define LTURN           D4      //Read in from the blinker timer from the left turn signal stick
 #define RTURN           D5      //Read in from the blinker timer from the right turn signal stick
@@ -91,7 +91,7 @@ Timer ssTimer(5000,softStartTimer);
 //Switch variables read by this board
 bool rPress, lPress;            //Flag set by the left or right turn signals being pressed
 bool highPress;                 //Flag set by the high beam being pressed
-bool drvFanPress;               //Flag set by the driver fan switch being pressed
+bool hornPress;                 //Flag set by the horn switch being pressed
 bool revPress;                  //Flag set by the reverse control switch being pressed. Should put system into reverse mode
 bool parkPress;                 //Flag set by the park control switch being pressed. Should put system into park mode
 
@@ -118,7 +118,6 @@ bool last_highbeam = true;      //Flag that tracks the last state of the highbea
 bool accessory = false;         //Boolean flag set if the Power Controller is in ACC mode (Start Short Press)
 bool ignition = false;          //Boolean flag set if the Power Controller is in Ignition Mode (Start Long Hold)
 bool started = false;           //Boolean flag set if the Power Controller is in Start Mode (Brake + Start button)
-bool hornPress = false;         //Boolean flag set if the horn is pressed - from Power Controller
 bool lowACCBatt = false;        //Boolean flag set if the 12V battery is low
 bool radFan = false;            //Boolean flag to set radiator fan based on temperature when in ignition mode
 bool radPump = false;           //Boolean flag to set radiator pump based when in ignition mode
@@ -351,7 +350,7 @@ void readPins(){
     highPress = digitalRead(HIGHBEAM);
     lPress = digitalRead(LTURN);
     rPress = digitalRead(RTURN);
-    drvFanPress = digitalRead(FAN_SW);
+    hornPress = digitalRead(HORN_SW);
     parkPress = digitalRead(PRK_SW);
     revPress = digitalRead(REV_SW);
 }
@@ -465,7 +464,7 @@ void configurePins(){
     pinMode(HIGHBEAM, INPUT);
     pinMode(LTURN, INPUT);
     pinMode(RTURN, INPUT);
-    pinMode(FAN_SW, INPUT);
+    pinMode(HORN_SW, INPUT);
     pinMode(PRK_SW, INPUT);
     pinMode(REV_SW, INPUT);
 

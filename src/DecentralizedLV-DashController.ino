@@ -6,37 +6,93 @@
  */
 #include "neopixel.h"
 
+//////////////////////////////////////////////////
+/////////////    SYSTEM BEHAVIOR    //////////////
+//////////////////////////////////////////////////
+
+#define USING_CAMRY_DASH        true            //Set this true if using the Camry instrument cluster. Set false if using the Volkswagen instrument cluster.
+#define DO_LOW_POWER_MODE       false           //Set this true if you want to enable low power mode based on signals from the power controller.
+#define DO_RMS_FAN_CONTROL      false           //Set this true if you will receive the motor temperature from the RMS and have the fan controlled by a corner board. Otherwise turns on fan with Ignition
+#define DO_BMS_FAN_CONTROL      false           //Set this true if you will receive the HV battery temperature data from the BMS and have the fan speed controlled by a corner board. Otherwise turns on fan with Ignition
+#define DO_ANALOG_DRIVE_SW      false           //Set this true if you have wired the drive switch with multiple modes (sport, eco, etc) using a resistor network. Otherwise, set false if using a simple binary switch (just does normal drive)
+#define DO_ANALOG_LIGHT_SW      false           //Set this true if you have wired the headlight switch with multiple modes (headlight, high beam) using a resistor network. Otherwise, set false if using a simple binary switch (just does headlights)
+#define DO_SOUNDBOARD_HORN      false           //Set this true if you have installed the soundboard module YX6300 and are using that as a horn. Otherwise, uses a simple binary switch to control a corner board to activate the horn
+#define DO_NEOPIXELS            false           //Set this true if you are attaching a neopixel strip to this board (need 12V to 5V regulator) from the two headers and want it to do animations.
+#define DO_MOMENTARY_FAN        false           //Set this true if you are using a momentary push button for the driver fan, set false if using an on/off switch
+
+#define DRV_FAN_INIT_MODE       false           //When turning on to accessory, set this as default state of driver fan
+
+#define AUTO_HDL_OFF            1000            //When using auto headlights and the lights are on, values below this from the photoresistor will turn off the headlights. This should be higher than AUTO_HDL_ON for a hysteresis effect
+#define AUTO_HDL_ON             600             //When using auto headlights and the lights are on, values below this from the photoresistor will turn off the headlights. This should be higher than AUTO_HDL_ON for a hysteresis effect
+
 #define SPEEDTHR 10
-#define MTR_TEMP_THR    60
-#define MTR_LPM_OFFSET  10
+#define MTR_TEMP_THR    60                      //Temperature (in C) of the motor which will enable the radiator/motor fan
+#define MTR_LPM_OFFSET  10                      //Offset temperature (in C) of the motor which will enable the radiator/motor fan in low power mode. Value of 10 with MTR_TEMP_THR = 60 would mean fan turns on at 70C in low power mode
 #define BATT_TEMP_THR   35
-
-#define PUMP_INIT_MODE 0
-#define DRV_FAN_INIT_MODE 1
-
-#define USING_CAMRY_DASH true
 
 //////////////////////////////////////////////////
 /////////////    CAN MESSAGE IDS    //////////////
 //////////////////////////////////////////////////
 
 #define CAN_SNS         0x99        //Sense address LP and ULPDRV boards receive on
+// byte 0: Right Turn PWM 0-255
+// byte 1: Left Turn PWM 0-255
+// byte 2: 
+// byte 3: HV Battery Fan PWM 0-255
+// byte 4: b0: Headlight, b1: High-Beam, b2: Trunk-Release, b3: Driver-Fan, b4: Power-Steer-Relay, b5: reverse-sense-camera, b7: horn
+// byte 5: b1: Low-Power Mode, b2: Startup animation flag, b3: Startup headlight
+// byte 6: Drive Mode: b0: Drive, b1: Sport, b2: Eco, b3: Reverse, b4: Neutral (BPS fault)
+// byte 7: b0: Radiator Fan, b1: Radiator pump, b2: Brake Boost, b3: Battery Fan, b4: MPPT-On
+
 #define CAN_PCTL        0x120       //CAN ID broadcasted by the Power Controller
+// byte 0: b0: accessory, b1: ignition, b2: started (ignition + motor)
+// byte 1: b0: brake pressed, b1: horn pressed, b2: solar charging, b3: AC charging
+// byte 2: b0: Low Power Mode, b1: low 12V battery
+// byte 3: 12V Battery Voltage (lower byte)     
+// byte 4: 12V Battery Voltage (upper byte)     --> Combine these two will give you 0-65535, make that millivolts. so a value of 12827 would represent 12.827 volts.
+// byte 5:
+// byte 6:
+// byte 7:
+
 #define CAN_DRV_FL      0x101       //CAN ID broadcasted by the front-left driver board
 #define CAN_DRV_FR      0x102       //CAN ID broadcasted by the front-right driver board
 #define CAN_DRV_RL      0x103       //CAN ID broadcasted by the rear-left driver board
+// byte 0: b0: BMS Fault Flash On (flashes)
+// byte 1: b0: BMS Fault Detected
+// byte 2: b0: Kill Switch Pressed
+// byte 3: b0: J1772 charge detected
+// byte 4:
+// byte 5:
+// byte 6:
+// byte 7:
+
 #define CAN_DRV_RR      0x104       //CAN ID broadcasted by the rear-right driver board
 #define CAN_MAIN_COMP   0x110       //CAN ID broadcasted by the main telemetry computer
-#define CAN_RMS_COMP    0x116       //CAN ID broadcasted by the main telemetry computer with motor controller data
-#define CAN_MPPT        0x690       //CAN ID broadcasted by MPPT with power data
+// byte 0:
+// byte 1:
+// byte 2: RMS RPM (lower byte)
+// byte 3: RMS RPM (upper byte)
+// byte 4:
+// byte 5:
+// byte 6:
+// byte 7:
 
-//#define USING_VW_DASH
-//#define USING_CAMRY_DASH
+#define CAN_RMS_COMP    0x116       //CAN ID broadcasted by the main telemetry computer with motor controller and BMS data
+// byte 0: RMS Temperature (degrees C)
+// byte 1: Motor Temperature (degrees C)
+// byte 2: Battery Temperature (degrees C)
+// byte 3: Battery Percentage (degrees C)
+// byte 4:
+// byte 5:
+// byte 6:
+// byte 7:
+
+#define CAN_MPPT        0x690       //CAN ID broadcasted by MPPT with power data
 
 //////////////////////////////////////////////////
 /////////////    INPUT SWITCHES    ///////////////
 //////////////////////////////////////////////////
-#define HEADLIGHT       A1      //Switch used to set headlight mode - Analog pin for auto-on or manual-on basedd on voltage
+#define HEADLIGHT       A1      //Switch used to set headlight mode - Analog pin for auto-on or manual-on based on voltage
 #define DRV_SW          A2      //Switch used to set drive mode - Analog pin for normal, eco, and sport modes
 #define FAN_SW          D0      //Switch to control if driver fan is on or off
 #define HIGHBEAM        D3      //Switch to control highbeams on or off
@@ -45,12 +101,16 @@
 #define REV_SW          D6      //Switch to change to reverse mode
 #define PRK_SW          D7      //Switch to change to park mode
 
+#define PHOTO_SENSE     A6      //Input header for a photoresistor to sense ambient light levels for automatic headlights
+
+//analogRead thresholds for drive mode and headlight switches (set these based on resistor network values)
 #define DRV_ECO_THR     1000
 #define DRV_SPT_THR     2000
 #define DRV_NRM_THR     3000
 
-#define HDL_AUTO_THR    1500
-#define HDL_MANU_THR    3000
+#define HDL_AUTO_THR    1000    //Values between this and HDL_HBM_THR will register as high beam
+#define HDL_HBM_THR     2000    //Values between this and HDL_MANU_THR will register as high beam
+#define HDL_MANU_THR    3000    //Values above this will register the headlight to be on
 
 //////////////////////////////////////////////////
 ///////////////    LP OUTPUTS   //////////////////
@@ -71,26 +131,23 @@ SYSTEM_MODE(SEMI_AUTOMATIC);
 Timer aTimer(10000, startupAnimTimer);
 Timer ssTimer(5000,softStartTimer);
 
-//////////////////////////////////////////////////
-////////////    GLOBAL VARIABLES   ///////////////
-//////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////                                              GLOBAL VARIABLES                                             ///////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+///////////////////////////////////////////////////////////////////
+////////////    CORNER CONTROL GLOBAL VARIABLES     ///////////////
+///////////////////////////////////////////////////////////////////
 //Switch variables read by this board
 bool rPress, lPress;            //Flag set by the left or right turn signals being pressed
 bool highPress;                 //Flag set by the high beam being pressed
-bool drvFanPress;               //Flag set by the driver fan switch being pressed
+bool fanPress;                  //Flag set by the fan switch being pressed
 bool revPress;                  //Flag set by the reverse control switch being pressed. Should put system into reverse mode
 bool parkPress;                 //Flag set by the park control switch being pressed. Should put system into park mode
 
 //ADC switch reading variables
 uint16_t driveADC = 0;          //Raw ADC reading from the drive switches. Depending on the reading sets normal vs sport vs eco
 uint16_t headlightADC = 0;      //Raw ADC reading from the headlight switches. Depending on the reading sets off, auto headlights from brightness, or manual on
-
-//Operation flags set by this board based on timing for animations
-bool startAnim = true;
-bool startupHdl = true;
-uint32_t pwmAnimationTick;
-bool dashAnim = true;
 
 //Operation flags/vars determined from state of switches
 uint8_t rTurn, lTurn;           //PWM controllable lights
@@ -100,52 +157,83 @@ bool headlight = false;         //Flag set true when the headlights should be tu
 bool highbeam = false;          //Flag set true when the highbeams should be turned on
 bool last_headlight = true;     //Flag that tracks the last state of the headlight switch, used to send out a CAN packet to the Camry dash when the switch changes
 bool last_highbeam = true;      //Flag that tracks the last state of the highbeam switch, used to send out a CAN packet to the Camry dash when the switch changes
+uint16_t photoresistor = 0;     //Value read by photoresistor, used to update automatic headlight state
 
-//Operation flags/vars updated by CAN messages received from other system boards
-bool accessory = false;         //Boolean flag set if the Power Controller is in ACC mode (Start Short Press)
-bool ignition = false;          //Boolean flag set if the Power Controller is in Ignition Mode (Start Long Hold)
-bool started = false;           //Boolean flag set if the Power Controller is in Start Mode (Brake + Start button)
-bool hornPress = false;         //Boolean flag set if the horn is pressed - from Power Controller
-bool lowACCBatt = false;        //Boolean flag set if the 12V battery is low
+//Motor and battery cooling
 bool radFan = false;            //Boolean flag to set radiator fan based on temperature when in ignition mode
 bool radPump = false;           //Boolean flag to set radiator pump based when in ignition mode
 uint8_t fanPWM;                 //PWM for battery box fans determined from main computer - NOTE: Legacy, HV Controller with replace this functionality
-bool solChg = false;            //Boolean flag set by Power Controller when in Solar Charge Mode
-bool acChg = false;             //Boolean flag set by Power Controller when in AC Charge Mode (J1772 Plugged In)
-bool LPMode;                    //Boolean flag set by Power Controller when operating in low power mode (timeout, low battery, etc)
+
+
+///////////////////////////////////////////////////////////////////
+////////////    CORNER RECEIVE GLOBAL VARIABLES     ///////////////
+///////////////////////////////////////////////////////////////////
+//Values received from corner boards
+bool switchFault = false;       //Flag set true when a kill switch has been opened - signals a BPS fault on instrument cluster
+bool bmsFault = false;          //Flag set true when BMS triggers a fault - signals a BPS fault on instrument cluster
+uint8_t errcode = 0;            //Error combination sent to VW dash - NOTE: Legacy, replaced with Camry instrument cluster in Decentralized LV 2.0
+
+///////////////////////////////////////////////////////////////////
+///////////   INSTRUMENT CLUSTER GLOBAL VARIABLES   ///////////////
+///////////////////////////////////////////////////////////////////
+//Values received from the instrument cluster used by this board and other boards
 uint16_t speed;                 //Vehicle speed over CAN - used to determine state of fans and display on instrument cluster
 uint16_t rmsTemp;               //Temperature of RMS over CAN - used to determine states of pumps/fans
 uint16_t rmsRPM;                //RPM of the motor to display on the instrument cluster
 uint16_t motorTemp;             //Temperature of the motor in celcius, used to turn on and off cooling fans
 uint16_t battTemp;              //Average temperature of the battery cells in the HV pack, used to change fan speed - NOTE: Legacy, HV Controller with replace this functionality
-bool switchFault = false;       //Flag set true when a kill switch has been opened - signals a BPS fault on instrument cluster
-bool bmsFault = false;          //Flag set true when BMS triggers a fault - signals a BPS fault on instrument cluster
-uint8_t battPct;                //Battery state of charge reported by BMS, passed through by main computer in Decentralized LV 1.0
-uint8_t errcode = 0;            //Error combination sent to VW dash - NOTE: Legacy, replaced with Camry instrument cluster in Decentralized LV 2.0
-uint8_t rmsFault = 1;           //Set to a non-zero value when the motor controller has a fault - illuminates check engine light
+
+
+///////////////////////////////////////////////////////////////////
+////////////       COMPUTER GLOBAL VARIABLES        ///////////////
+///////////////////////////////////////////////////////////////////
+//Values received from the car computer containing BMS/RMS data
 bool receivedBattTemp = false;  //Flag set true once a message has been received from the BMS about the battery temperature, used by softStart to set fans manually on if no message received
 bool receivedMotorTemp = false; //Flag set true once a message has been received from the RMS about the motor temperature, used by softStart to set fans manually on if no message received
+uint8_t rmsFault = 1;           //Set to a non-zero value when the motor controller has a fault - illuminates check engine light
+uint8_t battPct;                //Battery state of charge reported by BMS, passed through by main computer in Decentralized LV 1.0
+
+///////////////////////////////////////////////////////////////////
+////////////    POWER CONTROLLER GLOBAL VARIABLES   ///////////////
+///////////////////////////////////////////////////////////////////
+//Values received from the power controller used by this board and other boards
+bool lowACCBatt = false;        //Boolean flag set if the 12V battery is low
+bool solChg = false;            //Boolean flag set by Power Controller when in Solar Charge Mode
+bool acChg = false;             //Boolean flag set by Power Controller when in AC Charge Mode (J1772 Plugged In)
+bool LPMode;                    //Boolean flag set by Power Controller when operating in low power mode (timeout, low battery, etc)
+
+//Operation flags received from the power controller
+bool accessory = false;         //Boolean flag set if the Power Controller is in ACC mode (Start Short Press)
+bool ignition = false;          //Boolean flag set if the Power Controller is in Ignition Mode (Start Long Hold)
+bool started = false;           //Boolean flag set if the Power Controller is in Start Mode (Brake + Start button)
+
+///////////////////////////////////////////////////////////////////
+////////////        ANIMATION GLOBAL VARIABLES       //////////////
+///////////////////////////////////////////////////////////////////
+//Operation flags set by this board based on timing for animations
+bool startAnim = true;
+bool startupHdl = true;
+uint32_t pwmAnimationTick;
+bool dashAnim = true;
+
 
 //Misc control-flow variables
 uint32_t loop_time = 0;
 bool lastIgn = false;
 uint8_t spoofNum = 0;
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
 //////////////////////////////////////////////////
 ///////////    CAN MESSAGE FORMAT   //////////////
 //////////////////////////////////////////////////
 
-CANMessage pinStatus; //Main transmit message for switch data
-// byte 0: Right Turn PWM 0-255
-// byte 1: Left Turn PWM 0-255
-// byte 2: 
-// byte 3: HV Battery Fan PWM 0-255
-// byte 4: b0: Headlight, b1: High-Beam, b2: Trunk-Release, b3: Driver-Fan, b4: Power-Steer-Relay, b5: reverse-sense-camera
-// byte 5: b1: Low-Power Mode, b2: Startup animation flag, b3: Startup headlight
-// byte 6: Drive Mode: b0: Drive, b1: Sport, b2: Eco, b3: Reverse, b4: Neutral (BPS fault)
-// byte 7: b0: Radiator Fan, b1: Radiator pump, b2: Brake Boost, b3: Battery Fan, b4: MPPT-On
+CANMessage pinStatus;       //Main transmit message for switch data
 
-CANMessage inputMessage;
+CANMessage inputMessage;    //CAN message that is received by other boards in the system. Compare the ID of this message to see which board it came from.
 
 CANChannel can(CAN_D1_D2);
 
@@ -276,14 +364,15 @@ void VWSpoof(){
 void CANReceive(){
     while(can.receive(inputMessage)){                                       //Receive any CAN Bus messages in the buffer
         if(inputMessage.id == CAN_PCTL){                                    //Check if the received ID was from the Power Controller
-            //accessory =
-            //ignition = 
-            //started =
-            //solchg =
-            //acChg =
-            //LPMode =
-            //hornPress =
-            //lowACCBatt =
+            //accessory = inputMessage.data[0] & 1
+            //ignition = inputMessage.data[0] & 2
+            //started = inputMessage.data[0] & 4
+            //brakePress = inputMessage.data[1] & 1
+            //hornPress = inputMessage.data[1] & 2
+            //solchg = inputMessage.data[1] & 4
+            //acChg = inputMessage.data[1] & 8
+            //LPMode = inputMessage.data[2] & 1
+            //lowACCBatt = inputMessage.data[2] & 2
         }
         else if(inputMessage.id == CAN_MAIN_COMP){                          //Message from Joe's computer on the RPM of the motor, gets sent to dash
             if(!USING_CAMRY_DASH) rmsRPM = (inputMessage.data[2] + (inputMessage.data[3] << 8)) << 2;   //Calculate RMS rpm divided by four if using VW dashboard - Note: Legacy, remove once using Camry dash
@@ -332,13 +421,16 @@ void CANSend(uint16_t Can_addr, byte data0, byte data1, byte data2, byte data3, 
 
 //Read all of the pins on the device
 void readPins(){
-    headlightADC = analogRead(HEADLIGHT);       //Headlight is an analog voltage based on a series resistor depending on the switch pressed. Auto headlights has 40k Series resistor (6V), Manual has no resitor (12V)
-    driveADC =  analogRead(DRV_SW);             //Drive mode is an analog voltage based on a series resistor depending on the switch pressed. Sport has 20k Series resistor (9V), Eco has 40k Series resistor (6V)
+    if(DO_ANALOG_LIGHT_SW) headlightADC = analogRead(HEADLIGHT);       //Headlight is an analog voltage based on a series resistor depending on the switch pressed. Auto headlights has 40k Series resistor (6V), Manual has no resitor (12V)
+    else headlightADC = 4096 * digitalRead(HEADLIGHT);
+
+    if(DO_ANALOG_DRIVE_SW) driveADC = analogRead(DRV_SW);             //Drive mode is an analog voltage based on a series resistor depending on the switch pressed. Sport has 20k Series resistor (9V), Eco has 40k Series resistor (6V)
+    else driveADC = 4096 * digitalRead(DRV_SW);
 
     highPress = digitalRead(HIGHBEAM);
     lPress = digitalRead(LTURN);
     rPress = digitalRead(RTURN);
-    drvFanPress = digitalRead(FAN_SW);
+    fanPress = digitalRead(FAN_SW);
     parkPress = digitalRead(PRK_SW);
     revPress = digitalRead(REV_SW);
 }
@@ -373,10 +465,21 @@ void parseSwitches(){
     }
 
     if(headlightADC > HDL_MANU_THR){
-
+        headlight = true;
+        highbeam = false;
+    }
+    else if (headlightADC > HDL_HBM_THR){
+        headlight = true;
+        highbeam = true;
     }
     else if(headlightADC > HDL_AUTO_THR){
-
+        highbeam = false;
+        if(headlight && photoresistor < AUTO_HDL_OFF) headlight = false;
+        else if(!headlight && photoresistor > AUTO_HDL_ON) headlight = true;
+    }
+    else{
+        headlight = false;
+        highbeam = false;
     }
     
     if(bmsFault){
@@ -398,18 +501,23 @@ void parseSwitches(){
         startAnim = false;
     }
 
-    if(ignition){
-        if(((battTemp << 2) + 25) < 50) fanPWM = 0;
-        else fanPWM =  (battTemp << 2) + 25;
+    if(ignition){   //Ignition mode, should turn on the battery fans since more power is being drawn
+        if(DO_BMS_FAN_CONTROL){
+            if(((battTemp << 2) + 25) < 50) fanPWM = 0;
+            else fanPWM =  (battTemp << 2) + 25;
+        }
+        else{
+            fanPWM = 255;
+        }
     }
-    else{
-        if(battTemp < 35){
+    else{   //Accessory, turn on battery fans to low speed to cycle some air through the box
+        if(battTemp < 35 && DO_BMS_FAN_CONTROL){    //If we have a battery temperature reading and the battery is cold, turn off fans
             fanPWM = 0;
         }
-        else fanPWM = 70;
+        else fanPWM = 70;   //Otherwise, turn on fan to low speed
     }
 
-    if(LPMode == 0){
+    if(LPMode == 0 || DO_LOW_POWER_MODE){
         if(ignition != lastIgn){
             lastIgn = ignition;
             startupHdl = ignition;
@@ -420,7 +528,7 @@ void parseSwitches(){
         
         highbeam = highPress;
         if(ignition){
-            if(rmsTemp < MTR_TEMP_THR) radFan = 0;
+            if(rmsTemp < MTR_TEMP_THR && DO_RMS_FAN_CONTROL) radFan = 0;
             else radFan = 1;
             radPump = 1;
         }
@@ -433,9 +541,9 @@ void parseSwitches(){
         highbeam = 0;   //Disable high beam, technically unnecesary
 
         if(ignition){
-            if(rmsTemp < MTR_TEMP_THR + MTR_LPM_OFFSET) radFan = 0;
+            if(rmsTemp < MTR_TEMP_THR + MTR_LPM_OFFSET && DO_RMS_FAN_CONTROL) radFan = 0;
             else radFan = 1;
-            if(rmsTemp < MTR_TEMP_THR) radPump = 0;
+            if(rmsTemp < MTR_TEMP_THR && DO_RMS_FAN_CONTROL) radPump = 0;
             else radPump = 1;
         }
         else{
