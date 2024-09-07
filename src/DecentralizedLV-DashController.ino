@@ -179,6 +179,8 @@ CAN_Controller canController;
 
 DashController_CAN dashController(DASH_CONTROL_ADDR);
 
+LPDRV_RearLeft_CAN rearLeftDriver(REAR_LEFT_DRIVER);
+
 PowerController_CAN powerController(POWER_CONTROL_ADDR);
 
 CamryCluster_CAN instrumentCluster;
@@ -202,6 +204,7 @@ void setup() {
 
     canController.begin(500000);
     canController.addFilter(powerController.boardAddress, 0x7FF);   //Allow incoming messages from Power Controller
+    canController.addFilter(rearLeftDriver.boardAddress, 0x7FF);    //Allow incoming message from Rear left driver board
     canController.addFilter(CAN_DRV_RL, 0x7FF);       //Allow incoming messages from Rear-left driver for Kill Switch signal
     canController.addFilter(CAN_MAIN_COMP, 0x7FF);    //Allow incoming messages from Main Telemetry Computer
     canController.addFilter(CAN_RMS_COMP, 0x7FF);     //Allow incoming messages from Motor Controller Passthrough
@@ -211,6 +214,7 @@ void setup() {
 
     dashController.initialize();            //Initializes all of the variables the Dash Controller sends on CAN to their default values
     powerController.initialize();
+    rearLeftDriver.initialize();
     instrumentCluster.initialize();
 
     powerController.Acc = true;
@@ -239,6 +243,8 @@ void loop() {
     dashController.sendCANData(canController);
 
     CANReceive();   //Receive any incoming messages and parse what they mean
+
+    dashController.bmsFaultDetected = rearLeftDriver.bmsFaultInput;
 
     dashSpoof();
 
@@ -288,6 +294,7 @@ void CANReceive(){
     LV_CANMessage receivedMessage;
     while(canController.receive(receivedMessage)){ //Check if we received a message over the CAN bus
         powerController.receiveCANData(receivedMessage);
+        rearLeftDriver.receiveCANData(receivedMessage);
     }
 //    while(can.receive(inputMessage)){                                       //Receive any CAN Bus messages in the buffer
 //        if(inputMessage.id == CAN_MAIN_COMP){                          //Message from Joe's computer on the RPM of the motor, gets sent to dash
