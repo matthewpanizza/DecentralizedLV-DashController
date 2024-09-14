@@ -203,11 +203,11 @@ void setup() {
     Serial.begin(115200);
 
     canController.begin(500000);
-    canController.addFilter(powerController.boardAddress, 0x7FF);   //Allow incoming messages from Power Controller
-    canController.addFilter(rearLeftDriver.boardAddress, 0x7FF);    //Allow incoming message from Rear left driver board
-    canController.addFilter(CAN_DRV_RL, 0x7FF);       //Allow incoming messages from Rear-left driver for Kill Switch signal
-    canController.addFilter(CAN_MAIN_COMP, 0x7FF);    //Allow incoming messages from Main Telemetry Computer
-    canController.addFilter(CAN_RMS_COMP, 0x7FF);     //Allow incoming messages from Motor Controller Passthrough
+    canController.addFilter(powerController.boardAddress);   //Allow incoming messages from Power Controller
+    canController.addFilter(rearLeftDriver.boardAddress);    //Allow incoming message from Rear left driver board
+    canController.addFilter(CAN_DRV_RL);       //Allow incoming messages from Rear-left driver for Kill Switch signal
+    canController.addFilter(CAN_MAIN_COMP);    //Allow incoming messages from Main Telemetry Computer
+    canController.addFilter(CAN_RMS_COMP);     //Allow incoming messages from Motor Controller Passthrough
 
     configurePins();                        //Set up the GPIO pins for reading the state of the switches
     readPins();                             //Get the initial reading of the switches
