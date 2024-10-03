@@ -3,7 +3,7 @@
 /******************************************************/
 
 #include "Particle.h"
-#line 1 "c:/Users/mligh/OneDrive/Particle/DecentralizedLV-DashController/src/DecentralizedLV-DashController.ino"
+#line 1 "c:/Users/mligh/Downloads/DecentralizedLV-DashController/src/DecentralizedLV-DashController.ino"
 /*
  * Project DecentralizedLV
  * Description:
@@ -20,7 +20,7 @@
 void setup();
 void loop();
 void updateLPOutputs();
-#line 14 "c:/Users/mligh/OneDrive/Particle/DecentralizedLV-DashController/src/DecentralizedLV-DashController.ino"
+#line 14 "c:/Users/mligh/Downloads/DecentralizedLV-DashController/src/DecentralizedLV-DashController.ino"
 #define DO_LOW_POWER_MODE       false           //Set this true if you want to enable low power mode based on signals from the power controller.
 #define DO_RMS_FAN_CONTROL      false           //Set this true if you will receive the motor temperature from the RMS and have the fan controlled by a corner board. Otherwise turns on fan with Ignition
 #define DO_BMS_FAN_CONTROL      false           //Set this true if you will receive the HV battery temperature data from the BMS and have the fan speed controlled by a corner board. Otherwise turns on fan with Ignition
@@ -189,6 +189,8 @@ CAN_Controller canController;
 
 DashController_CAN dashController(DASH_CONTROL_ADDR);
 
+LPDRV_RearLeft_CAN rearLeftDriver(REAR_LEFT_DRIVER);
+
 PowerController_CAN powerController(POWER_CONTROL_ADDR);
 
 CamryCluster_CAN instrumentCluster;
@@ -211,20 +213,24 @@ void setup() {
     Serial.begin(115200);
 
     canController.begin(500000);
-    canController.addFilter(powerController.boardAddress, 0x7FF);   //Allow incoming messages from Power Controller
-    canController.addFilter(CAN_DRV_RL, 0x7FF);       //Allow incoming messages from Rear-left driver for Kill Switch signal
-    canController.addFilter(CAN_MAIN_COMP, 0x7FF);    //Allow incoming messages from Main Telemetry Computer
-    canController.addFilter(CAN_RMS_COMP, 0x7FF);     //Allow incoming messages from Motor Controller Passthrough
+    canController.addFilter(powerController.boardAddress);   //Allow incoming messages from Power Controller
+    canController.addFilter(rearLeftDriver.boardAddress);    //Allow incoming message from Rear left driver board
+    canController.addFilter(CAN_DRV_RL);       //Allow incoming messages from Rear-left driver for Kill Switch signal
+    canController.addFilter(CAN_MAIN_COMP);    //Allow incoming messages from Main Telemetry Computer
+    canController.addFilter(CAN_RMS_COMP);     //Allow incoming messages from Motor Controller Passthrough
 
     configurePins();                        //Set up the GPIO pins for reading the state of the switches
     readPins();                             //Get the initial reading of the switches
 
     dashController.initialize();            //Initializes all of the variables the Dash Controller sends on CAN to their default values
     powerController.initialize();
+    rearLeftDriver.initialize();
     instrumentCluster.initialize();
 
-    powerController.Acc = true;
-    powerController.Ign = true;
+    //powerController.Acc = true;
+    //powerController.Ign = true;
+
+    //powerController.FullStart = true;
 
     battPct = 10;                           //Start with initially low battery percentage displayed to err on side of caution in case we don't hear from BMS
 
@@ -250,6 +256,8 @@ void loop() {
 
     CANReceive();   //Receive any incoming messages and parse what they mean
 
+    dashController.bmsFaultDetected = rearLeftDriver.bmsFaultInput;
+
     dashSpoof();
 
     //Serial.printlnf("L: %d, T: %d",loop_time,millis());
@@ -272,6 +280,7 @@ void dashSpoof(){
     //BMS faults. Shows "Hybrid System Stopped" if we have a BMS fault
     if(dashController.bmsFaultDetected) instrumentCluster.LCD_PowerPrompt = LCD_HYBRID_SYSTEM_STOPPED;
     else if(powerController.Ign && !powerController.FullStart) instrumentCluster.LCD_PowerPrompt = LCD_IGNITION_PROMPT;
+    else instrumentCluster.LCD_PowerPrompt = LCD_POWER_GOOD;
 
     //12V battery status, if low.
     instrumentCluster.chargingSystemMalfunction = powerController.LowACCBattery;
@@ -298,6 +307,7 @@ void CANReceive(){
     LV_CANMessage receivedMessage;
     while(canController.receive(receivedMessage)){ //Check if we received a message over the CAN bus
         powerController.receiveCANData(receivedMessage);
+        rearLeftDriver.receiveCANData(receivedMessage);
     }
 //    while(can.receive(inputMessage)){                                       //Receive any CAN Bus messages in the buffer
 //        if(inputMessage.id == CAN_MAIN_COMP){                          //Message from Joe's computer on the RPM of the motor, gets sent to dash
@@ -350,11 +360,11 @@ void readPins(){
 
 void updateGear(){
     if(powerController.FullStart){  //Check if the power controller has indicated that the user has fully started the car (brake + PTS)
-        if(parkPress) dashController.driveMode = DRIVE_MODE_PARK;
-        else if(revPress) dashController.driveMode = DRIVE_MODE_REVERSE;
+        if(revPress) dashController.driveMode = DRIVE_MODE_REVERSE;
         else if(driveADC > DRV_SPT_THR && driveADC < DRV_NRM_THR) dashController.driveMode =  DRIVE_MODE_SPORT;
         else if(driveADC > DRV_ECO_THR && driveADC < DRV_SPT_THR) dashController.driveMode = DRIVE_MODE_ECO;
         else if(driveADC > DRV_NRM_THR) dashController.driveMode = DRIVE_MODE_FORWARD;
+        else dashController.driveMode = DRIVE_MODE_PARK;
         if(dashController.driveMode != DRIVE_MODE_PARK && (bmsFault || switchFault)) dashController.driveMode = DRIVE_MODE_NEUTRAL;
     }
 }

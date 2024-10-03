@@ -203,11 +203,11 @@ void setup() {
     Serial.begin(115200);
 
     canController.begin(500000);
-    canController.addFilter(powerController.boardAddress, 0x7FF);   //Allow incoming messages from Power Controller
-    canController.addFilter(rearLeftDriver.boardAddress, 0x7FF);    //Allow incoming message from Rear left driver board
-    canController.addFilter(CAN_DRV_RL, 0x7FF);       //Allow incoming messages from Rear-left driver for Kill Switch signal
-    canController.addFilter(CAN_MAIN_COMP, 0x7FF);    //Allow incoming messages from Main Telemetry Computer
-    canController.addFilter(CAN_RMS_COMP, 0x7FF);     //Allow incoming messages from Motor Controller Passthrough
+    canController.addFilter(powerController.boardAddress);   //Allow incoming messages from Power Controller
+    canController.addFilter(rearLeftDriver.boardAddress);    //Allow incoming message from Rear left driver board
+    canController.addFilter(CAN_DRV_RL);       //Allow incoming messages from Rear-left driver for Kill Switch signal
+    canController.addFilter(CAN_MAIN_COMP);    //Allow incoming messages from Main Telemetry Computer
+    canController.addFilter(CAN_RMS_COMP);     //Allow incoming messages from Motor Controller Passthrough
 
     configurePins();                        //Set up the GPIO pins for reading the state of the switches
     readPins();                             //Get the initial reading of the switches
@@ -217,8 +217,10 @@ void setup() {
     rearLeftDriver.initialize();
     instrumentCluster.initialize();
 
-    powerController.Acc = true;
-    powerController.Ign = true;
+    //powerController.Acc = true;
+    //powerController.Ign = true;
+
+    //powerController.FullStart = true;
 
     battPct = 10;                           //Start with initially low battery percentage displayed to err on side of caution in case we don't hear from BMS
 
@@ -268,6 +270,7 @@ void dashSpoof(){
     //BMS faults. Shows "Hybrid System Stopped" if we have a BMS fault
     if(dashController.bmsFaultDetected) instrumentCluster.LCD_PowerPrompt = LCD_HYBRID_SYSTEM_STOPPED;
     else if(powerController.Ign && !powerController.FullStart) instrumentCluster.LCD_PowerPrompt = LCD_IGNITION_PROMPT;
+    else instrumentCluster.LCD_PowerPrompt = LCD_POWER_GOOD;
 
     //12V battery status, if low.
     instrumentCluster.chargingSystemMalfunction = powerController.LowACCBattery;
@@ -347,11 +350,11 @@ void readPins(){
 
 void updateGear(){
     if(powerController.FullStart){  //Check if the power controller has indicated that the user has fully started the car (brake + PTS)
-        if(parkPress) dashController.driveMode = DRIVE_MODE_PARK;
-        else if(revPress) dashController.driveMode = DRIVE_MODE_REVERSE;
+        if(revPress) dashController.driveMode = DRIVE_MODE_REVERSE;
         else if(driveADC > DRV_SPT_THR && driveADC < DRV_NRM_THR) dashController.driveMode =  DRIVE_MODE_SPORT;
         else if(driveADC > DRV_ECO_THR && driveADC < DRV_SPT_THR) dashController.driveMode = DRIVE_MODE_ECO;
         else if(driveADC > DRV_NRM_THR) dashController.driveMode = DRIVE_MODE_FORWARD;
+        else dashController.driveMode = DRIVE_MODE_PARK;
         if(dashController.driveMode != DRIVE_MODE_PARK && (bmsFault || switchFault)) dashController.driveMode = DRIVE_MODE_NEUTRAL;
     }
 }
