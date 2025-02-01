@@ -34,32 +34,6 @@
 /////////////    CAN MESSAGE IDS    //////////////
 //////////////////////////////////////////////////
 
-#define CAN_SNS         0x99        //Sense address LP and ULPDRV boards receive on
-
-
-#define CAN_PCTL        0x120       //CAN ID broadcasted by the Power Controller
-// byte 0: b0: accessory, b1: ignition, b2: started (ignition + motor)
-// byte 1: b0: brake pressed, b1: horn pressed, b2: solar charging, b3: AC charging
-// byte 2: b0: Low Power Mode, b1: low 12V battery
-// byte 3: 12V Battery Voltage (lower byte)     
-// byte 4: 12V Battery Voltage (upper byte)     --> Combine these two will give you 0-65535, make that millivolts. so a value of 12827 would represent 12.827 volts.
-// byte 5:
-// byte 6:
-// byte 7:
-
-#define CAN_DRV_FL      0x101       //CAN ID broadcasted by the front-left driver board
-#define CAN_DRV_FR      0x102       //CAN ID broadcasted by the front-right driver board
-#define CAN_DRV_RL      0x103       //CAN ID broadcasted by the rear-left driver board
-// byte 0: b0: BMS Fault Flash On (flashes)
-// byte 1: b0: BMS Fault Detected
-// byte 2: b0: Kill Switch Pressed
-// byte 3: b0: J1772 charge detected
-// byte 4:
-// byte 5:
-// byte 6:
-// byte 7:
-
-#define CAN_DRV_RR      0x104       //CAN ID broadcasted by the rear-right driver board
 #define CAN_MAIN_COMP   0x110       //CAN ID broadcasted by the main telemetry computer
 // byte 0:
 // byte 1:
@@ -107,7 +81,7 @@
 #define INST_PWR    A0      //12V output for instrument cluster
 #define DRV_FAN     A3      //12V output for driver fan based on switch
 #define STEREO      A7      //12V output for stereo
-//A5
+#define FUEL_PWM    A5      //12V PWM pulse for poor man's DAC. See circuit in README.md
 
 //////////////////////////////////////////////////
 ////////////    MISCELLANEOUS IO   ///////////////
@@ -205,7 +179,6 @@ void setup() {
     canController.begin(500000);
     canController.addFilter(powerController.boardAddress);   //Allow incoming messages from Power Controller
     canController.addFilter(rearLeftDriver.boardAddress);    //Allow incoming message from Rear left driver board
-    canController.addFilter(CAN_DRV_RL);       //Allow incoming messages from Rear-left driver for Kill Switch signal
     canController.addFilter(CAN_MAIN_COMP);    //Allow incoming messages from Main Telemetry Computer
     canController.addFilter(CAN_RMS_COMP);     //Allow incoming messages from Motor Controller Passthrough
 
