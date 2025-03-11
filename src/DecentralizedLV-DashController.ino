@@ -190,11 +190,6 @@ void setup() {
     rearLeftDriver.initialize();
     instrumentCluster.initialize();
 
-    //powerController.Acc = true;
-    //powerController.Ign = true;
-
-    //powerController.FullStart = true;
-
     battPct = 10;                           //Start with initially low battery percentage displayed to err on side of caution in case we don't hear from BMS
 
     battTemp = 10;                          //Turn off fans during soft-start period
@@ -212,7 +207,6 @@ void loop() {
     updateGear();
     updateLights();
     updateFanControl();
-    updateLPOutputs();
     updateLPOutputs();
 
     dashController.sendCANData(canController);
@@ -232,7 +226,7 @@ void loop() {
 void dashSpoof(){
     //Handle which drive mode is displayed
     instrumentCluster.driveMode = dashController.driveMode;
-    instrumentCluster.ecoMode = powerController.LowPowerMode;
+    instrumentCluster.ecoMode = powerController.LowPowerMode;   //Eco mode text on bottom of screen. Different from the ECO leaf.
     
     //Handle which lights are on. Backlight dims if headlights are on
     instrumentCluster.headlight = dashController.headlight;
@@ -248,6 +242,10 @@ void dashSpoof(){
     //12V battery status, if low.
     instrumentCluster.chargingSystemMalfunction = powerController.LowACCBattery;
 
+    //Parking brake LCD message.
+    instrumentCluster.parkingBrakeCircle = false;             //Maybe read in a corner board and set to true when parking brake is on and in "Drive" mode
+    instrumentCluster.LCD_ParkingBrakePrompt = LCD_PBRK_GOOD; //Maybe read in a corner board and set to LCD_PBRK_BRAKE_ON when parking brake is on and in "Drive" mode
+
     //RMS fault information
     if(dashController.rmsFaultDetected && !dashController.bmsFaultDetected) instrumentCluster.LCD_EngineStoppedCode = LCD_ENGINE_STOPPED;
     else instrumentCluster.LCD_EngineStoppedCode = LCD_ENGINE_NORMAL;
@@ -255,12 +253,21 @@ void dashSpoof(){
 
     instrumentCluster.readyToDrive = powerController.FullStart;         //If the car can drive, then enable this (shows the park icon on cluster)
 
+    instrumentCluster.trunkOpen = false;                           //Maybe read in a corner board that has a trunk switch and set to true when trunk is open
+
     //RPM and speed gauges
     instrumentCluster.rpmGauge = 1000;  //Do something with this...
-    instrumentCluster.speedGauge = 50;
+    instrumentCluster.speedGauge = 0;
 
     //RMS temperature
     instrumentCluster.motorTempDegC = 60;   //Do something with this...
+
+    //Economy rating
+    instrumentCluster.ecoGauge = 55;    //Maybe rate this based on amount of battery current being drawn
+    instrumentCluster.ecoLeaf = false;  //Maybe read in the amount of battery pack current and set true if it is negative (i.e. charging from solar)
+
+    //Outdoor temperature
+    instrumentCluster.outsideTemperatureF = 50;     //Maybe read a temperature sensor from the BMS or elsewhere and display it on the cluster
 
     //Now that we've update all the fields, just call sendCANData, and the object will automatically handle all the variables!
     instrumentCluster.sendCANData(canController);
@@ -398,11 +405,16 @@ void updateFaultState(){
 }
 
 void updateLPOutputs(){
-    if(powerController.Acc && !powerController.LowPowerMode) digitalWrite(INST_PWR, HIGH);
-    else digitalWrite(INST_PWR, LOW);
+    digitalWrite(INST_PWR, HIGH);
+    analogWrite(FUEL_PWM, 5 + random(20));
+    digitalWrite(STEREO, HIGH);
+    digitalWrite(DRV_FAN, HIGH);
+    
+    //if(powerController.Acc) digitalWrite(INST_PWR, HIGH);
+    //else digitalWrite(INST_PWR, LOW);
 
-    if(powerController.Acc && !powerController.LowPowerMode) digitalWrite(DRV_FAN, fanPress);
-    else digitalWrite(DRV_FAN, LOW);
+    //if(powerController.Acc && !powerController.LowPowerMode) digitalWrite(DRV_FAN, fanPress);
+    //else digitalWrite(DRV_FAN, LOW);
 }
 
 //Configure all of the pins on the microcontroller
@@ -418,7 +430,9 @@ void configurePins(){
 
     pinMode(LIGHT_SENSE,INPUT);
 
+    pinMode(STEREO, OUTPUT);
     pinMode(INST_PWR, OUTPUT);
+    pinMode(FUEL_PWM, OUTPUT);
     pinMode(DRV_FAN,OUTPUT);
 }
 
