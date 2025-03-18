@@ -6,6 +6,7 @@
  */
 #include "neopixel.h"
 #include "DecentralizedLV-Boards/DecentralizedLV-Boards.h"
+#include "GD3300.h"
 
 //////////////////////////////////////////////////
 /////////////    SYSTEM BEHAVIOR    //////////////
@@ -145,6 +146,11 @@ uint8_t battPct;                //Battery state of charge reported by BMS, passe
 //Misc control-flow variables
 uint32_t loop_time = 0;
 
+//MP3 serial soundboard player variables
+GD3300 mp3;
+uint32_t mp3InitializeTime;
+bool mp3Initialized = false;
+
 //////////////////////////////////////////////////
 ///////////    CAN MESSAGE FORMAT   //////////////
 //////////////////////////////////////////////////
@@ -175,6 +181,7 @@ void updateFaultState();
 // setup() runs once, when the device is first turned on.
 void setup() {
     Serial.begin(115200);
+    Serial1.begin(9600);                    //Initialize Serial1 port for soundboard
 
     canController.begin(500000);
     canController.addFilter(powerController.boardAddress);   //Allow incoming messages from Power Controller
@@ -184,6 +191,10 @@ void setup() {
 
     configurePins();                        //Set up the GPIO pins for reading the state of the switches
     readPins();                             //Get the initial reading of the switches
+
+    mp3.begin(Serial1);                     //Initialize the soundboard
+    mp3.sendCommand(CMD_SEL_DEV, 0, 2);     //select sd-card
+    mp3InitializeTime = millis();
 
     dashController.initialize();            //Initializes all of the variables the Dash Controller sends on CAN to their default values
     powerController.initialize();
@@ -208,6 +219,7 @@ void loop() {
     updateLights();
     updateFanControl();
     updateLPOutputs();
+    updateMP3Player();
 
     dashController.sendCANData(canController);
 
@@ -415,6 +427,40 @@ void updateLPOutputs(){
 
     //if(powerController.Acc && !powerController.LowPowerMode) digitalWrite(DRV_FAN, fanPress);
     //else digitalWrite(DRV_FAN, LOW);
+}
+
+void updateMP3Player(){
+    if(millis() - mp3InitializeTime > 500){
+        mp3Initialized = true;
+    }
+
+    static bool lastFullStart = false; //Used to determine if we need to play the startup sound
+    if(mp3Initialized && powerController.FullStart != lastFullStart){
+        if(powerController.FullStart) mp3.play(6); //Play the startup sound
+        else mp3.play(7);           //Play the shutdown sound
+    }
+
+
+    static bool lastACCCharge = false; //Used to determine if we need to play the startup sound
+    if(mp3Initialized && powerController.ACCharge && powerController.ACCharge != lastACCCharge){
+        mp3.play(1);                //Play the AC charge sound
+    }
+
+    static bool lastHorn = false;
+    if(mp3Initialized && powerController.Horn && powerController.Horn != lastHorn){
+        mp3.play(4);                //Play the horn sound
+    }
+
+    //TODO: add fault sound once HV controller implemented
+    //static bool lastBMSFault = false;
+    //if(mp3Initialized && hvController.bmsFault && hvController.bmsFault != lastACCCharge){
+    //    mp3.play(2);                //Play the BMS fault sound 
+    //}
+
+    if(mp3Initialized) lastFullStart = powerController.FullStart;
+    lastACCCharge = powerController.ACCharge;
+    lastHorn = powerController.Horn;
+    //lastBMSFault = hvController.lastBMSFault;
 }
 
 //Configure all of the pins on the microcontroller

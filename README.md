@@ -16,7 +16,7 @@ The DecentralizedLV Dash Controller has the primary role of receiving button inp
 - 8X [Sense Pins](#https://github.com/matthewpanizza/DecentralizedLV-Documentation?tab=readme-ov-file#sense-pins-read-binary-onoff-switches-or-12v-signals) (4:1 voltage divider ratio)
 - [Neopixel](https://github.com/matthewpanizza/DecentralizedLV-Documentation?tab=readme-ov-file#addressable-led-strips-neopixel) Data Output
 - [Neopixel](https://github.com/matthewpanizza/DecentralizedLV-Documentation?tab=readme-ov-file#addressable-led-strips-neopixel) Power Regulator Supply (attach 12V to 5V regulator)
-- MP3 Player (YX6300) for soundboard
+- MP3 Player (GD3300) for soundboard
 - Photoresistor header for ambient light sensing
 - 8X 12V passthrough header for connecting switches to sense pins
 - 4X GND passthrough header for low-power driver devices
@@ -40,13 +40,13 @@ The system allows the driver to select different drive modes using a switch. We 
 
 The rotary dial has internal connections for each the forward and reverse pins. Two of the eight [sense pins](https://github.com/matthewpanizza/DecentralizedLV-Documentation?tab=readme-ov-file#sense-pins-read-binary-onoff-switches-or-12v-signals) are used to read the binary signal for forward and reverse. Information about the drive gear needs to be passed to the Camry Instrument Cluster and to the Power Controller.
 
-### YX6300 Sound Board
+### GD3300 Sound Board
 
-The Dash Controller also has a port for controlling a YX6300 soundboard. This module reads data from a microSD card (on the back of the board) and plays audio out of the aux port. This can be used for startup sounds or fun horns.
+The Dash Controller also has a port for controlling a GD3300 soundboard. This module reads data from a microSD card (on the back of the board) and plays audio out of the aux port. This can be used for startup sounds or fun horns.
 
 <img src="Pictures/YX6300.jpg" width="50%">
 
-This is not yet implemented in software, but here is an article for how to [control this module using an Arduino](https://electropeak.com/learn/interfacing-yx6300-serial-mp3-player-with-arduino/). To port this to the Photon, you can just replace the functions called from the `SoftwareSerial` class with `Serial1`, as the Photon has native Serial support.
+This is not yet implemented in software, but here is an article for how to [control this module using an Arduino](https://github.com/misa3L994/GD3300/tree/main). The library needed to control the MP3 player is includded in the GD3300 `.cpp` and `.h` files. The GD3300 takes a micro SD card (formatted in FAT32) with MP3 files in the root directory. The files should be uniquely named with a 4-digit number (i.e. `0001.mp3`, `0002.mp3`, etc). You can then play these songs using the `mp3.play(x)` function where `x` is the file number. One important note is that the GD3300 takes about 500ms after reset to be ready to play MP3 files.
 
  
 ### Neopixel Control
