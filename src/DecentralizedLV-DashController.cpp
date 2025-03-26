@@ -12,6 +12,7 @@
  */
 #include "neopixel.h"
 #include "DecentralizedLV-Boards/DecentralizedLV-Boards.h"
+#include "DecentralizedLV-Boards/HVBoards/DecentralizedLV-HVBoards.h"
 
 //////////////////////////////////////////////////
 /////////////    SYSTEM BEHAVIOR    //////////////
@@ -20,7 +21,7 @@
 void setup();
 void loop();
 void updateLPOutputs();
-#line 14 "c:/Users/mligh/OneDrive/Particle/DecentralizedLV-DashController/src/DecentralizedLV-DashController.ino"
+#line 15 "c:/Users/mligh/OneDrive/Particle/DecentralizedLV-DashController/src/DecentralizedLV-DashController.ino"
 #define DO_LOW_POWER_MODE       false           //Set this true if you want to enable low power mode based on signals from the power controller.
 #define DO_RMS_FAN_CONTROL      false           //Set this true if you will receive the motor temperature from the RMS and have the fan controlled by a corner board. Otherwise turns on fan with Ignition
 #define DO_BMS_FAN_CONTROL      false           //Set this true if you will receive the HV battery temperature data from the BMS and have the fan speed controlled by a corner board. Otherwise turns on fan with Ignition
@@ -133,24 +134,8 @@ bool switchFault = false;       //Flag set true when a kill switch has been open
 bool bmsFault = false;          //Flag set true when BMS triggers a fault - signals a BPS fault on instrument cluster
 
 ///////////////////////////////////////////////////////////////////
-///////////   INSTRUMENT CLUSTER GLOBAL VARIABLES   ///////////////
-///////////////////////////////////////////////////////////////////
-//Values received from the instrument cluster used by this board and other boards
-uint16_t speed;                 //Vehicle speed over CAN - used to determine state of fans and display on instrument cluster
-uint16_t rmsTemp;               //Temperature of RMS over CAN - used to determine states of pumps/fans
-uint16_t rmsRPM;                //RPM of the motor to display on the instrument cluster
-uint16_t motorTemp;             //Temperature of the motor in celcius, used to turn on and off cooling fans
-uint16_t battTemp;              //Average temperature of the battery cells in the HV pack, used to change fan speed - NOTE: Legacy, HV Controller with replace this functionality
-
-
-///////////////////////////////////////////////////////////////////
 ////////////       COMPUTER GLOBAL VARIABLES        ///////////////
 ///////////////////////////////////////////////////////////////////
-//Values received from the car computer containing BMS/RMS data
-bool receivedBattTemp = false;  //Flag set true once a message has been received from the BMS about the battery temperature, used by softStart to set fans manually on if no message received
-bool receivedMotorTemp = false; //Flag set true once a message has been received from the RMS about the motor temperature, used by softStart to set fans manually on if no message received
-uint8_t rmsFault = 1;           //Set to a non-zero value when the motor controller has a fault - illuminates check engine light
-uint8_t battPct;                //Battery state of charge reported by BMS, passed through by main computer in Decentralized LV 1.0
 
 //Misc control-flow variables
 uint32_t loop_time = 0;
@@ -168,6 +153,10 @@ LPDRV_RearLeft_CAN rearLeftDriver(REAR_LEFT_DRIVER);
 PowerController_CAN powerController(POWER_CONTROL_ADDR);
 
 CamryCluster_CAN instrumentCluster;
+
+OrionBMS bms(ORION_PACK_STAT_ADDR, ORION_DTC_CELLV_ADDR, ORION_CUR_LMT_TEMP_ADDR, ORION_J1772_STATS_ADDR); //Orion BMS CAN controller
+
+RMSController rms(RMS_POWER_STAT_ADDR, RMS_MTR_TEMP_ADDR, RMS_POST_FAULTS_ADDR); //RMS CAN controller
 
 //////////////////////////////////////////////////
 ///////////    FUNCTION PROTOTYPES   /////////////
@@ -187,10 +176,11 @@ void setup() {
     Serial.begin(115200);
 
     canController.begin(500000);
-    canController.addFilter(powerController.boardAddress);   //Allow incoming messages from Power Controller
-    canController.addFilter(rearLeftDriver.boardAddress);    //Allow incoming message from Rear left driver board
-    canController.addFilter(CAN_MAIN_COMP);    //Allow incoming messages from Main Telemetry Computer
-    canController.addFilter(CAN_RMS_COMP);     //Allow incoming messages from Motor Controller Passthrough
+    //Allowing all messages, since we exceed the filter count.
+    //canController.addFilter(powerController.boardAddress);   //Allow incoming messages from Power Controller
+    //canController.addFilter(rearLeftDriver.boardAddress);    //Allow incoming message from Rear left driver board
+    //canController.addFilter(ORION_PACK_STAT_ADDR);    //Allow incoming messages from Main Telemetry Computer
+    //canController.addFilter(ORION_DTC_CELLV_ADDR);     //Allow incoming messages from Motor Controller Passthrough
 
     configurePins();                        //Set up the GPIO pins for reading the state of the switches
     readPins();                             //Get the initial reading of the switches
@@ -200,12 +190,6 @@ void setup() {
     rearLeftDriver.initialize();
     instrumentCluster.initialize();
 
-    battPct = 10;                           //Start with initially low battery percentage displayed to err on side of caution in case we don't hear from BMS
-
-    battTemp = 10;                          //Turn off fans during soft-start period
-    speed = 0;                              //Vehicle speed that comes from the dashboard
-    rmsTemp = 0;                            //Set motor controller temperature to cold until receiving the first temperature packet or the softStart expires which then turns on the fan
-    
     //aTimer.start();                         //Start the timer for the startup animation
     //ssTimer.start();                        //Start the timer for the soft-start behavior
 }
@@ -288,36 +272,9 @@ void CANReceive(){
     while(canController.receive(receivedMessage)){ //Check if we received a message over the CAN bus
         powerController.receiveCANData(receivedMessage);
         rearLeftDriver.receiveCANData(receivedMessage);
+        bms.receiveCANData(receivedMessage); //Receive any messages from the BMS
+        rms.receiveCANData(receivedMessage); //Receive any messages from the RMS
     }
-//    while(can.receive(inputMessage)){                                       //Receive any CAN Bus messages in the buffer
-//        if(inputMessage.id == CAN_MAIN_COMP){                          //Message from Joe's computer on the RPM of the motor, gets sent to dash
-//            if(!USING_CAMRY_DASH) rmsRPM = (inputMessage.data[2] + (inputMessage.data[3] << 8)) << 2;   //Calculate RMS rpm divided by four if using VW dashboard - Note: Legacy, remove once using Camry dash
-//            else rmsRPM = inputMessage.data[2] + (inputMessage.data[3] << 8);                           //Calculate RMS rpm to be sent to Camry dashboard
-//        }
-//        else if(inputMessage.id == CAN_DRV_RL){                             //Message from back-left corner board if the fault flasher is on, turns on/off the dash indicator
-//            if(inputMessage.data[2] == 1 || inputMessage.data[3] == 1){     //Byte 2 contains if a kill switch was pressd, byte 3 contains if the BMS signaled a fault
-//                switchFault = inputMessage.data[2];                     
-//                bmsFault = inputMessage.data[3];
-//                errcode = 0x82;                                             //Turn on the dash warning label for the VW dashboard - Note: Legacy
-//            }
-//            else{
-//                bmsFault = false;                                           //If neither of the bytes are a 1, then there is no fault, clear flags
-//                switchFault = false;                                        //If neither of the bytes are a 1, then there is no fault, clear flags
-//                errcode = 0x88;                                             //Turn off the dash warning label for the VW dashboard - Note: Legacy
-//            }
-//        }
-//        else if(inputMessage.id == CAN_RMS_COMP){                           //Message from Joe Computer of forwarded battery and motor controller temperatures
-//            rmsTemp = inputMessage.data[0];
-//            motorTemp = inputMessage.data[1];
-//            battTemp = inputMessage.data[5];
-//            battPct = inputMessage.data[6];
-//            receivedBattTemp = true;
-//            receivedMotorTemp = true;
-//        }
-//        else if(inputMessage.id == 0x69A){                                  //Forwarded message from Joe Computer if there is a fault posted by motor controller
-//            rmsFault = inputMessage.data[2];
-//        }
-//    }
 }
 
 //Read all of the pins on the device
@@ -381,8 +338,8 @@ void updateLights(){
 void updateFanControl(){
     if(powerController.Ign){   //Ignition mode, should turn on the battery fans since more power is being drawn
         if(DO_BMS_FAN_CONTROL){
-            if(((battTemp << 2) + 25) < 50) dashController.batteryFanPWM = 0;
-            else dashController.batteryFanPWM =  (battTemp << 2) + 25;
+            if(((bms.bmsAverageTempC << 2) + 25) < 50) dashController.batteryFanPWM = 0;
+            else dashController.batteryFanPWM =  (bms.bmsAverageTempC << 2) + 25;
         }
         else{
             dashController.batteryFanPWM = 255;
@@ -391,7 +348,7 @@ void updateFanControl(){
         dashController.radiatorPump = true;
     }
     else{   //Accessory, turn on battery fans to low speed to cycle some air through the box
-        if(battTemp < 35 && DO_BMS_FAN_CONTROL){    //If we have a battery temperature reading and the battery is cold, turn off fans
+        if(bms.bmsAverageTempC < 35 && DO_BMS_FAN_CONTROL){    //If we have a battery temperature reading and the battery is cold, turn off fans
             dashController.batteryFanPWM = 0;
         }
         else dashController.batteryFanPWM = 70;   //Otherwise, turn on fan to low speed
