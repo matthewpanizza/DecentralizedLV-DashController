@@ -3,7 +3,7 @@
 /******************************************************/
 
 #include "Particle.h"
-#line 1 "c:/Users/mligh/Downloads/DecentralizedLV-DashController-Soundboard/src/DecentralizedLV-DashController.ino"
+#line 1 "c:/Users/mligh/OneDrive/Particle/DecentralizedLV-DashController/src/DecentralizedLV-DashController.ino"
 /*
  * Project DecentralizedLV
  * Description:
@@ -22,9 +22,8 @@
 void setup();
 void loop();
 void updateLPOutputs();
-#line 15 "c:/Users/mligh/OneDrive/Particle/DecentralizedLV-DashController/src/DecentralizedLV-DashController.ino"
 void updateMP3Player();
-#line 15 "c:/Users/mligh/Downloads/DecentralizedLV-DashController-Soundboard/src/DecentralizedLV-DashController.ino"
+#line 16 "c:/Users/mligh/OneDrive/Particle/DecentralizedLV-DashController/src/DecentralizedLV-DashController.ino"
 #define DO_LOW_POWER_MODE       false           //Set this true if you want to enable low power mode based on signals from the power controller.
 #define DO_RMS_FAN_CONTROL      false           //Set this true if you will receive the motor temperature from the RMS and have the fan controlled by a corner board. Otherwise turns on fan with Ignition
 #define DO_BMS_FAN_CONTROL      false           //Set this true if you will receive the HV battery temperature data from the BMS and have the fan speed controlled by a corner board. Otherwise turns on fan with Ignition
@@ -162,6 +161,8 @@ PowerController_CAN powerController(POWER_CONTROL_ADDR);
 
 CamryCluster_CAN instrumentCluster;
 
+HVController_CAN HVController(HV_CONTROL_ADDR);
+
 OrionBMS bms(ORION_PACK_STAT_ADDR, ORION_DTC_CELLV_ADDR, ORION_CUR_LMT_TEMP_ADDR, ORION_J1772_STATS_ADDR); //Orion BMS CAN controller
 
 RMSController rms(RMS_POWER_STAT_ADDR, RMS_MTR_TEMP_ADDR, RMS_POST_FAULTS_ADDR); //RMS CAN controller
@@ -202,6 +203,7 @@ void setup() {
     powerController.initialize();
     rearLeftDriver.initialize();
     instrumentCluster.initialize();
+    HVController.initialize();
 
     //aTimer.start();                         //Start the timer for the startup animation
     //ssTimer.start();                        //Start the timer for the soft-start behavior
@@ -221,7 +223,7 @@ void loop() {
 
     CANReceive();   //Receive any incoming messages and parse what they mean
 
-    dashController.bmsFaultDetected = rearLeftDriver.bmsFaultInput;
+    dashController.bmsFaultDetected = HVController.BMSFault;
 
     dashSpoof();
 
@@ -286,6 +288,7 @@ void CANReceive(){
     while(canController.receive(receivedMessage)){ //Check if we received a message over the CAN bus
         powerController.receiveCANData(receivedMessage);
         rearLeftDriver.receiveCANData(receivedMessage);
+        HVController.receiveCANData(receivedMessage);
         bms.receiveCANData(receivedMessage); //Receive any messages from the BMS
         rms.receiveCANData(receivedMessage); //Receive any messages from the RMS
     }

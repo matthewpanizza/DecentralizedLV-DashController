@@ -150,6 +150,8 @@ PowerController_CAN powerController(POWER_CONTROL_ADDR);
 
 CamryCluster_CAN instrumentCluster;
 
+HVController_CAN HVController(HV_CONTROL_ADDR);
+
 OrionBMS bms(ORION_PACK_STAT_ADDR, ORION_DTC_CELLV_ADDR, ORION_CUR_LMT_TEMP_ADDR, ORION_J1772_STATS_ADDR); //Orion BMS CAN controller
 
 RMSController rms(RMS_POWER_STAT_ADDR, RMS_MTR_TEMP_ADDR, RMS_POST_FAULTS_ADDR); //RMS CAN controller
@@ -190,6 +192,7 @@ void setup() {
     powerController.initialize();
     rearLeftDriver.initialize();
     instrumentCluster.initialize();
+    HVController.initialize();
 
     //aTimer.start();                         //Start the timer for the startup animation
     //ssTimer.start();                        //Start the timer for the soft-start behavior
@@ -209,7 +212,7 @@ void loop() {
 
     CANReceive();   //Receive any incoming messages and parse what they mean
 
-    dashController.bmsFaultDetected = rearLeftDriver.bmsFaultInput;
+    dashController.bmsFaultDetected = HVController.BMSFault;
 
     dashSpoof();
 
@@ -274,6 +277,7 @@ void CANReceive(){
     while(canController.receive(receivedMessage)){ //Check if we received a message over the CAN bus
         powerController.receiveCANData(receivedMessage);
         rearLeftDriver.receiveCANData(receivedMessage);
+        HVController.receiveCANData(receivedMessage);
         bms.receiveCANData(receivedMessage); //Receive any messages from the BMS
         rms.receiveCANData(receivedMessage); //Receive any messages from the RMS
     }
