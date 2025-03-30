@@ -116,6 +116,8 @@ uint16_t driveADC = 0;          //Raw ADC reading from the drive switches. Depen
 uint16_t headlightADC = 0;      //Raw ADC reading from the headlight switches. Depending on the reading sets off, auto headlights from brightness, or manual on
 uint16_t photoresistorADC = 0;     //Value read by photoresistor, used to update automatic headlight state
 
+//Fuel
+uint8_t fuelPercentage = 85;   //Percentage of fuel in the tank (0-100). This can be updated by the BMS or other sources. Default to 100 for startup
 
 ///////////////////////////////////////////////////////////////////
 ////////////    CORNER RECEIVE GLOBAL VARIABLES     ///////////////
@@ -207,6 +209,7 @@ void loop() {
     updateFanControl();
     updateLPOutputs();
     updateMP3Player();
+    updateFuelState(bms.packSOC);
 
     dashController.sendCANData(canController);
 
@@ -377,9 +380,40 @@ void updateFaultState(){
     }
 }
 
+void updateFuelState(uint8_t fuel){
+    //This function can be used to update the fuel percentage in the dash controller. This can be called from BMS or other sources
+    uint8_t fuelMinPWM = 215; //analogWrite value that shows the minimum fuel level on the cluster.
+    uint8_t fuelMaxPWM = 75; //analogWrite value that shows the maximum fuel level on the cluster.
+    
+    if(fuel <= 100 && fuel >= 0){
+        fuelPercentage = fuel; //Update the fuel percentage if within range
+    }
+    else{
+        fuelPercentage = 0; //Default to 100 if out of range
+    }
+    
+    //Higher PWM value means less fuel in the tank, need to invert.
+    float fuelPercentage = (float)fuel / 100.0; //Convert to a percentage (0-1)
+
+    //Gauge doesn't seem to be linear :(  - Need to map the values to a non-linear scale to match the gauge on the cluster.
+    if(fuelPercentage <= 0.25){
+        fuelPercentage *= 1.3;
+    }
+    else if (fuelPercentage < 0.8){      //Lower range (0.25 to 0.8) - this is where the gauge is more linear, so scale it linearly to match the gauge
+        fuelPercentage += 0.3 * 0.25;    //Need to add on the calculation from the previous region to have continuous values
+    }
+    else{                                //Upper region (0.8 to 1.0) - this is where the gauge starts to saturate and not move as much, so scale it down to match the gauge
+        fuelPercentage = 0.625 * (fuelPercentage - 0.8) + 0.875;    //Some complicated math to map the region from 0.875 to 1.0
+    }
+
+    if(fuelPercentage > 1.0) fuelPercentage = 1.0; //Clamp to 1.0 if it exceeds 1.0 after mapping to the non-linear scale
+
+    analogWrite(FUEL_PWM, fuelMinPWM - (fuelPercentage * (fuelMinPWM - fuelMaxPWM)), 10000);
+    
+}
+
 void updateLPOutputs(){
     digitalWrite(INST_PWR, HIGH);
-    analogWrite(FUEL_PWM, 5 + random(20));
     digitalWrite(STEREO, HIGH);
     digitalWrite(DRV_FAN, HIGH);
     
